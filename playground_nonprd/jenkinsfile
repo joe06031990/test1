@@ -134,8 +134,8 @@ pipeline {
                             dir_path=$(dirname "${dashboard_path}")
                             folder_title=$(basename "${dir_path}")
                             
-                            local FOLDER_ID
-                            local target_grafana_folder=""
+                            FOLDER_ID=""
+                            target_grafana_folder=""
 
                             if [ "${folder_title}" == "${GRAFANA_BACKUP_DIR}" ]; then
                                 target_grafana_folder="Playground"

@@ -64,12 +64,12 @@ pipeline {
 
                         echo "Starting Grafana restore from local directory '${GRAFANA_BACKUP_DIR}' to ${GRAFANA_URL}"
 
-                        # A more robust function to parse JSON values using grep and sed.
+                        # A more robust function to parse JSON values using awk.
                         extract_json_value() {
                             local json="$1"
                             local key="$2"
-                            # This command chain isolates the key-value pair, extracts the value, and cleans it up.
-                            echo "$json" | grep -o "\"$key\":[^,}]*" | cut -d':' -f2- | sed 's/"//g' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+                            # This awk command is more reliable for parsing simple JSON structures.
+                            echo "$json" | awk -v key="$key" 'BEGIN{FS="[,\"{}]"} {for(i=1;i<=NF;i++){if($i==key){print $(i+2);exit}}}'
                         }
 
                         # Use an associative array to keep track of folder IDs to avoid duplicate API calls

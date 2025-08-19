@@ -68,7 +68,8 @@ pipeline {
                         extract_json_value() {
                             local json="$1"
                             local key="$2"
-                            echo "$json" | awk -F"[,:{}\\\"]" -v key="$key" '{
+                            # The backslashes in the awk field separator must be escaped for Groovy.
+                            echo "$json" | awk -F"[,:{}\\\\\\"]" -v key="$key" '{
                                 for (i=1; i<=NF; i++) {
                                     if ($i == key) {
                                         # The value is the next non-empty field
@@ -159,7 +160,7 @@ pipeline {
                             # The backup file contains {"meta":{...}, "dashboard":{...}}.
                             # The restore API expects {"dashboard":{...}, "folderId":...}.
                             # This command correctly extracts the main dashboard object and removes its "id" field.
-                            dashboard_object=$(echo "$full_backup_json" | sed -n 's/.*,"dashboard":\({.*}\)}/\1/p' | sed 's/"id":[0-9]*,//')
+                            dashboard_object=$(echo "$full_backup_json" | sed -n 's/.*,"dashboard":\\({.*}\\)}/\\1/p' | sed 's/"id":[0-9]*,//')
 
                             if [ -z "$dashboard_object" ]; then
                                 echo "Error: Could not extract dashboard object from '${dashboard_path}'. Skipping."

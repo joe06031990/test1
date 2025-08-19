@@ -9,10 +9,10 @@ pipeline {
         cron('H * * * *')
     }
 
-       // Defines environment variables that will be available throughout the pipeline.
+    // Defines environment variables that will be available throughout the pipeline.
     environment {
-   // Securely loads the Grafana API key from Jenkins credentials.
-             GRAFANA_API_KEY = credentials('GRAFANA_API_KEY')
+        // Securely loads the Grafana API key from Jenkins credentials.
+        GRAFANA_API_KEY = credentials('GRAFANA_API_KEY')
         // The URL of your Grafana instance.
         GRAFANA_URL = "https://jstest2025.grafana.net"
         // The name of the root directory where backups will be stored in the Git repository.
@@ -111,7 +111,7 @@ pipeline {
                             GRAFANA_FOLDER_MAP["O11y"]="Playground/O11y"
                             GRAFANA_FOLDER_MAP["Platform Infrastructure"]="Playground/Platform_Infrastructure"
                             GRAFANA_FOLDER_MAP["Platform Services"]="Playground/Platform_Services"
-                            GRAFANA_FOLDER_MAP["LDE"]="playground/Platform_Services/LDE"
+                            GRAFANA_FOLDER_MAP["LDE"]="Playground/Platform_Services/LDE"
                             GRAFANA_FOLDER_MAP["Reaper"]="Playground/Reaper"
                             GRAFANA_FOLDER_MAP["Traefik Proxy"]="Playground/Traefik_Proxy"
                             
@@ -182,6 +182,7 @@ pipeline {
                         sh "git config user.email 'jenkins@test.com'"
                         sh "git config user.name 'Jenkins Automated Backup'"
                         
+                        // NOTE: Check that 'jgithub-creds2' isn't a typo for 'github-creds2'.
                         // Use the usernamePassword helper to match your credential type
                         withCredentials([usernamePassword(credentialsId: 'github-creds2', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PAT')]) {
                             sh """

@@ -64,12 +64,13 @@ pipeline {
 
                         echo "Starting Grafana restore from local directory '${GRAFANA_BACKUP_DIR}' to ${GRAFANA_URL}"
 
-                        # A more robust function to parse JSON values, handling both strings and numbers.
+                        # A more robust function to parse JSON values using sed, handling both strings and numbers.
                         extract_json_value() {
                             local json="$1"
                             local key="$2"
-                            # This command chain isolates the key-value pair, extracts the value, and cleans it up.
-                            echo "$json" | sed 's/[{}]//g' | tr ',' '\n' | grep "\"$key\":" | head -n 1 | cut -d':' -f2- | sed 's/^\"//' | sed 's/\"$//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+                            # This command uses a regular expression to capture the value associated with the key.
+                            # It handles both quoted (string) and unquoted (numeric/boolean) values.
+                            echo "$json" | sed -n "s/.*\"$key\":\([^,}]*\).*/\1/p" | sed 's/\"//g' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | head -n 1
                         }
 
                         # Use an associative array to keep track of folder IDs to avoid duplicate API calls

@@ -3,7 +3,11 @@ pipeline {
     // Specifies that the pipeline can run on any available Jenkins agent.
     agent any
 
- 
+    // Sets up an automatic schedule for the pipeline to run.
+    triggers {
+        // 'H * * * *' means the job will run approximately every hour.
+        cron('H * * * *')
+    }
 
        // Defines environment variables that will be available throughout the pipeline.
     environment {

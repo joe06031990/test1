@@ -139,17 +139,19 @@ pipeline {
                             echo "--- Processing dashboard: ${dashboard_path} ---"
                             
                             # --- FIX STARTS HERE ---
-                            # Determine the parent directory of the dashboard file.
-                            parent_dir=$(basename "$(dirname "${dashboard_path}")")
-                            
+                            # This logic more reliably determines the correct target folder.
                             TARGET_FOLDER_ID=""
-                            
-                            if [ "${parent_dir}" == "${GRAFANA_BACKUP_DIR}" ]; then
-                                # File is at the root of the backup dir, so it goes in the main "playground" folder.
-                                TARGET_FOLDER_ID=$(get_or_create_folder_id "playground")
+                            # Get the dashboard's path relative to the backup directory root.
+                            path_in_backup="${dashboard_path#${GRAFANA_BACKUP_DIR}/}"
+
+                            # Check if the path contains a slash, which indicates it's in a subdirectory.
+                            if [[ "$path_in_backup" == *"/"* ]]; then
+                                # It's in a subdirectory. The folder name is the part before the first slash.
+                                folder_name="${path_in_backup%%/*}"
+                                TARGET_FOLDER_ID=$(get_or_create_folder_id "${folder_name}")
                             else
-                                # File is in a subdirectory. Use the subdirectory name as the folder title.
-                                TARGET_FOLDER_ID=$(get_or_create_folder_id "${parent_dir}")
+                                # It's at the root of the backup directory. It goes to the "playground" folder.
+                                TARGET_FOLDER_ID=$(get_or_create_folder_id "playground")
                             fi
                             # --- FIX ENDS HERE ---
                             

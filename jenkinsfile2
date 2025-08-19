@@ -35,22 +35,6 @@ pipeline {
         stage('Run Grafana Restore') {
             steps {
                 script {
-                    // This Python script will parse the full list of folders from Grafana
-                    // and print each folder's title and ID on a new line, separated by a comma.
-                    def pythonLister = '''
-import sys, json
-try:
-    folders = json.load(sys.stdin)
-    for folder in folders:
-        # Ensure title and id exist before printing
-        if "title" in folder and "id" in folder:
-            print("{},{}".format(folder.get("title"), folder.get("id")))
-except Exception:
-    sys.exit(1)
-'''
-                    // Write the Python parser to a file in the workspace.
-                    writeFile(file: 'folder_lister.py', text: pythonLister)
-
                     // Define the entire restore script as a Groovy multiline string.
                     def restoreScriptContent = '''
                         #!/bin/bash
@@ -69,7 +53,7 @@ except Exception:
                             echo "Error: Backup directory '${GRAFANA_BACKUP_DIR}' not found." >&2
                             exit 1
                         fi
-                        
+
                         # A function to parse simple JSON values from strings.
                         extract_json_value() {
                             local json="$1"
@@ -94,22 +78,29 @@ except Exception:
 
                         # --- PASS 1: Load all existing folders from Grafana ---
                         echo "--- Pass 1: Loading existing Grafana folders ---"
-                        # Fetch all folders and use the Python script to parse the result.
-                        # The while loop reads the "title,id" output and populates the associative array.
-                        curl -s -H "Authorization: Bearer ${GRAFANA_API_KEY}" "${GRAFANA_URL}/api/search?type=dash-folder" | \
-                        python folder_lister.py | \
-                        while IFS=, read -r title id; do
-                            echo "Found existing folder: '${title}' with ID: ${id}"
-                            FOLDER_IDS["${title}"]="${id}"
-                        done
+                        # Fetch all folders and use sed to parse the result.
+                        # Using process substitution to avoid creating a subshell for the while loop.
+                        while IFS= read -r line; do
+                            # Extract title and id from each line of JSON
+                            title=$(echo "$line" | sed -n 's/.*"title":"\\([^"]*\\)".*/\\1/p')
+                            id=$(echo "$line" | sed -n 's/.*"id":\\([0-9]*\\).*/\\1/p')
+
+                            # Ensure both title and id were found before adding to the array
+                            if [ -n "$title" ] && [ -n "$id" ]; then
+                                echo "Found existing folder: '${title}' with ID: ${id}"
+                                FOLDER_IDS["${title}"]="${id}"
+                            fi
+                        done < <(curl -s -H "Authorization: Bearer ${GRAFANA_API_KEY}" "${GRAFANA_URL}/api/search?type=dash-folder" | sed 's/},{/}\\n{/g')
                         echo "--- Finished loading existing folders ---"
 
-                        # --- PASS 2: Determine required folders and create any that are missing ---
-                        echo "--- Pass 2: Ensuring all required folders exist ---"
+                        # --- PASS 2: Restore all dashboards, creating folders as needed ---
+                        echo "--- Pass 2: Restoring dashboards ---"
                         find "${GRAFANA_BACKUP_DIR}" -type f -name "*.json" | while read -r dashboard_path; do
+                            echo "--- Processing dashboard: ${dashboard_path} ---"
+                            
                             path_in_backup="${dashboard_path#${GRAFANA_BACKUP_DIR}/}"
                             
-                            local folder_name=""
+                            folder_name=""
                             if [[ "$path_in_backup" == *"/"* ]]; then
                                 subfolder_name="${path_in_backup%%/*}"
                                 if [[ "${subfolder_name}" == "playground" ]]; then
@@ -124,48 +115,23 @@ except Exception:
                             # Check if the folder is already in our map. If not, create it.
                             if [ -z "${FOLDER_IDS[$folder_name]}" ]; then
                                 echo "Folder '${folder_name}' not found. Creating it..." >&2
-                                local create_payload="{\\"title\\": \\"${folder_name}\\"}"
-                                local create_result
+                                create_payload="{\\"title\\": \\"${folder_name}\\"}"
                                 create_result=$(curl -s -X POST -H "Authorization: Bearer ${GRAFANA_API_KEY}" -H "Content-Type: application/json" --data "$create_payload" "${GRAFANA_URL}/api/folders")
                                 
-                                local new_folder_id
                                 new_folder_id=$(extract_json_value "$create_result" "id")
                                 
                                 if [ -z "$new_folder_id" ]; then
                                     echo "Error: Failed to create folder '${folder_name}'. Response: ${create_result}" >&2
-                                    # Continue to the next file instead of exiting, to make the process more resilient.
                                     continue
                                 fi
                                 echo "Successfully created folder '${folder_name}' with ID: ${new_folder_id}" >&2
-                                # Add the newly created folder to our map for subsequent lookups.
                                 FOLDER_IDS["${folder_name}"]="${new_folder_id}"
                             fi
-                        done | sort -u
-                        echo "--- Folder check complete ---"
 
-                        # --- PASS 3: Restore all dashboards ---
-                        echo "--- Pass 3: Restoring all dashboards ---"
-                        find "${GRAFANA_BACKUP_DIR}" -type f -name "*.json" | while read -r dashboard_path; do
-                            echo "--- Processing dashboard: ${dashboard_path} ---"
-                            
-                            path_in_backup="${dashboard_path#${GRAFANA_BACKUP_DIR}/}"
-                            
-                            local target_folder_name=""
-                            if [[ "$path_in_backup" == *"/"* ]]; then
-                                subfolder_name="${path_in_backup%%/*}"
-                                if [[ "${subfolder_name}" == "playground" ]]; then
-                                    target_folder_name="playground"
-                                else
-                                    target_folder_name="playground_${subfolder_name}"
-                                fi
-                            else
-                                target_folder_name="playground"
-                            fi
-
-                            TARGET_FOLDER_ID="${FOLDER_IDS[${target_folder_name}]}"
+                            TARGET_FOLDER_ID="${FOLDER_IDS[${folder_name}]}"
                             
                             if [ -z "$TARGET_FOLDER_ID" ]; then
-                                echo "Error: Could not find a pre-created Folder ID for '${target_folder_name}'. Skipping dashboard."
+                                echo "Error: Could not find a Folder ID for '${folder_name}'. Skipping dashboard."
                                 continue
                             fi
                             

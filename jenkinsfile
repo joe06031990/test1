@@ -92,6 +92,8 @@ pipeline {
                             declare -A GRAFANA_FOLDER_MAP
                             
                             GRAFANA_FOLDER_MAP["playground"]=""
+                            GRAFANA_FOLDER_MAP["test"]="playground/test"
+                            GRAFANA_FOLDER_MAP["uu"]="playground/uu"
                             GRAFANA_FOLDER_MAP["_Anaplan Operations_"]="playground/Anaplan_Operations"
                             GRAFANA_FOLDER_MAP["CVD Mirror"]="playground/CVD_Mirror"
                             GRAFANA_FOLDER_MAP["Data and AI"]="playground/Data_and_AI"

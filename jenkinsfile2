@@ -139,7 +139,27 @@ pipeline {
                             echo "$folder_id"
                         }
 
-                        # Find all dashboard JSON files in the backup directory and iterate through them
+                        # --- FIX STARTS HERE ---
+                        # PASS 1: Pre-create all necessary folders
+                        echo "--- Pass 1: Ensuring all Grafana folders exist ---"
+                        # Create a unique list of all folder names required by the backup.
+                        find "${GRAFANA_BACKUP_DIR}" -type f -name "*.json" | while read -r dashboard_path; do
+                            path_in_backup="${dashboard_path#${GRAFANA_BACKUP_DIR}/}"
+                            if [[ "$path_in_backup" == *"/"* ]]; then
+                                folder_name="${path_in_backup%%/*}"
+                                echo "$folder_name"
+                            else
+                                echo "playground"
+                            fi
+                        done | sort -u | while read -r folder_name; do
+                            echo "Checking/creating folder: ${folder_name}"
+                            get_or_create_folder_id "${folder_name}" > /dev/null
+                        done
+                        echo "--- Folder check complete ---"
+
+                        # PASS 2: Restore all dashboards
+                        echo "--- Pass 2: Restoring all dashboards ---"
+                        # --- FIX ENDS HERE ---
                         find "${GRAFANA_BACKUP_DIR}" -type f -name "*.json" | while read -r dashboard_path; do
                             echo "--- Processing dashboard: ${dashboard_path} ---"
                             

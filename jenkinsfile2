@@ -4,7 +4,11 @@ pipeline {
     // Specifies that the pipeline can run on any available Jenkins agent.
     agent any
 
-
+    // This pipeline is now configured to run automatically on a schedule.
+    triggers {
+        // 'H * * * *' means the job will run approximately every hour.
+        cron('H * * * *')
+    }
 
     // Defines environment variables that will be available throughout the pipeline.
     environment {
@@ -60,13 +64,23 @@ pipeline {
 
                         echo "Starting Grafana restore from local directory '${GRAFANA_BACKUP_DIR}' to ${GRAFANA_URL}"
 
-                        # A more robust function to parse JSON values using grep and sed.
+                        # A more robust function to parse JSON values using awk.
                         extract_json_value() {
                             local json="$1"
                             local key="$2"
-                            # This command chain isolates the key-value pair, extracts the value, and cleans it up.
-                            # It handles both quoted (string) and unquoted (numeric/boolean) values.
-                            echo "$json" | grep -o "\"$key\":[^,}]*" | cut -d':' -f2- | sed 's/"//g' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+                            echo "$json" | awk -F"[,:{}\\\"]" -v key="$key" '{
+                                for (i=1; i<=NF; i++) {
+                                    if ($i == key) {
+                                        # The value is the next non-empty field
+                                        for (j=i+1; j<=NF; j++) {
+                                            if ($j != "" && $j !~ /^[ \t]*$/) {
+                                                print $j;
+                                                exit;
+                                            }
+                                        }
+                                    }
+                                }
+                            }'
                         }
 
                         # Use an associative array to keep track of folder IDs to avoid duplicate API calls
@@ -144,7 +158,7 @@ pipeline {
 
                             # The backup file contains {"meta":{...}, "dashboard":{...}}.
                             # The restore API expects {"dashboard":{...}, "folderId":...}.
-                            # This command correctly extracts the main dashboard object and removes its "id" field.
+                            # This command extracts the main dashboard object and removes its "id" field.
                             dashboard_object=$(echo "$full_backup_json" | sed 's/.*,"dashboard"://' | sed 's/}$//' | sed 's/"id":[0-9]*,//')
 
                             if [ -z "$dashboard_object" ]; then

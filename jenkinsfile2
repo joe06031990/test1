@@ -104,7 +104,6 @@ pipeline {
                             relative_dir=$(dirname "${path_in_backup}")
                             
                             folder_name=""
-                            # --- FIX STARTS HERE ---
                             # This simplified logic correctly determines the target folder name.
                             if [[ "${relative_dir}" == "." ]] || [[ "${relative_dir}" == "playground" ]]; then
                                 # Dashboards at the root or in a 'playground' subdir go to the main 'playground' folder.
@@ -114,10 +113,9 @@ pipeline {
                                 # First, strip a leading 'playground/' if it exists, to avoid creating 'playground_playground_...'.
                                 path_to_process=${relative_dir#playground/}
                                 # Then, replace any remaining slashes with underscores for nested directories.
-                                sanitized_path=${path_to_process//\//_}
+                                sanitized_path=${path_to_process//\\//_}
                                 folder_name="playground_${sanitized_path}"
                             fi
-                            # --- FIX ENDS HERE ---
 
                             # Check if the folder is already in our map. If not, create it.
                             if [ -z "${FOLDER_IDS[$folder_name]}" ]; then

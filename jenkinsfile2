@@ -104,16 +104,13 @@ pipeline {
                             relative_dir=$(dirname "${path_in_backup}")
                             
                             folder_name=""
-                            if [[ "${relative_dir}" == "." ]]; then
-                                # Dashboard is at the root of the backup directory.
+                            if [[ "${relative_dir}" == "." ]] || [[ "${relative_dir}" == "playground" ]]; then
+                                # Dashboards at the root or in a 'playground' subdir go to the main 'playground' folder.
                                 folder_name="playground"
                             else
-                                # Dashboard is in a subdirectory.
-                                # Strip a leading "playground/" from the path, if it exists, to handle nested structures correctly.
-                                path_to_process=${relative_dir#playground/}
-                                # Replace any remaining slashes with underscores.
-                                sanitized_path=${path_to_process//\\//_}
-                                # Prepend "playground_" to the final name.
+                                # For any other subdirectory, create a prefixed folder name.
+                                # Flatten the path by replacing slashes with underscores.
+                                sanitized_path=${relative_dir//\\//_}
                                 folder_name="playground_${sanitized_path}"
                             fi
 

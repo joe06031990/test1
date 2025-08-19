@@ -64,19 +64,22 @@ pipeline {
 
                         echo "Starting Grafana restore from local directory '${GRAFANA_BACKUP_DIR}' to ${GRAFANA_URL}"
 
-                        # This function parses a JSON string to find the value of a given key.
+                        # This function parses a JSON string to find the value of a given key using grep and sed.
+                        # It handles both quoted (string) and unquoted (numeric, boolean) values.
                         extract_json_value() {
                             local json="$1"
                             local key="$2"
-                            echo "$json" | awk -F'"' -v key="$key" '
-                                {
-                                    for(i=1; i<=NF; i++) {
-                                        if($i == key && $(i+1) == ":") {
-                                            print $(i+2)
-                                            break
-                                        }
-                                    }
-                                }'
+                            local value
+                            
+                            # First, try to extract a string value (e.g., "key":"value")
+                            value=$(echo "$json" | grep -o "\"$key\":\"[^\"]*\"" | sed -e "s/\"$key\":\"//" -e "s/\"$//")
+                            
+                            # If a string value was not found, try to extract a numeric or boolean value (e.g., "key":value)
+                            if [ -z "$value" ]; then
+                                value=$(echo "$json" | grep -o "\"$key\":[^,}]*" | sed -e "s/\"$key\"://")
+                            fi
+                            
+                            echo "$value"
                         }
 
                         # Use an associative array to keep track of folder IDs to avoid duplicate API calls

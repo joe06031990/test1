@@ -117,10 +117,10 @@ sys.exit(1)
                             local search_result
                             search_result=$(curl -s -H "Authorization: Bearer ${GRAFANA_API_KEY}" "${GRAFANA_URL}/api/search?type=dash-folder")
                             
-                            # --- FIX: Use the Python script for reliable parsing ---
+                            # --- FIX: Use the Python script for reliable parsing via a pipe ---
                             local folder_id
-                            # Pipe the curl result into the python script. If it exits with an error (folder not found), '|| true' prevents 'set -e' from stopping the script.
-                            folder_id=$(python folder_parser.py "${folder_title}" <<< "${search_result}") || true
+                            # Pipe the curl result into the python script. This is more portable than '<<<'.
+                            folder_id=$(echo "${search_result}" | python folder_parser.py "${folder_title}") || true
 
                             if [ -n "$folder_id" ]; then
                                 echo "Folder '${folder_title}' already exists with ID: ${folder_id}" >&2
@@ -151,7 +151,12 @@ sys.exit(1)
                             path_in_backup="${dashboard_path#${GRAFANA_BACKUP_DIR}/}"
                             if [[ "$path_in_backup" == *"/"* ]]; then
                                 subfolder_name="${path_in_backup%%/*}"
-                                echo "playground_${subfolder_name}"
+                                # --- FIX: Prevent creating "playground_playground" ---
+                                if [[ "${subfolder_name}" == "playground" ]]; then
+                                    echo "playground"
+                                else
+                                    echo "playground_${subfolder_name}"
+                                fi
                             else
                                 echo "playground"
                             fi
@@ -172,7 +177,12 @@ sys.exit(1)
 
                             if [[ "$path_in_backup" == *"/"* ]]; then
                                 subfolder_name="${path_in_backup%%/*}"
-                                folder_name="playground_${subfolder_name}"
+                                # --- FIX: Prevent creating "playground_playground" ---
+                                if [[ "${subfolder_name}" == "playground" ]]; then
+                                    folder_name="playground"
+                                else
+                                    folder_name="playground_${subfolder_name}"
+                                fi
                                 TARGET_FOLDER_ID=$(get_or_create_folder_id "${folder_name}")
                             else
                                 TARGET_FOLDER_ID=$(get_or_create_folder_id "playground")

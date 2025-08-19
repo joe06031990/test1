@@ -70,7 +70,7 @@ pipeline {
                             local key="$2"
                             # This command uses a regular expression to capture the value associated with the key.
                             # It handles both quoted (string) and unquoted (numeric/boolean) values.
-                            echo "$json" | sed -n "s/.*\"$key\":\([^,}]*\).*/\1/p" | sed 's/\"//g' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | head -n 1
+                            echo "$json" | sed -n "s/.*\\"$key\\":\\([^,}]*\\).*/\\1/p" | sed 's/\\"//g' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | head -n 1
                         }
 
                         # Use an associative array to keep track of folder IDs to avoid duplicate API calls

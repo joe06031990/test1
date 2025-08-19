@@ -35,6 +35,24 @@ pipeline {
         stage('Run Grafana Restore') {
             steps {
                 script {
+                    // --- FIX: Python script for robust JSON parsing ---
+                    // This Python script will be used to reliably find the folder ID from the Grafana API response.
+                    def pythonParser = '''
+import sys, json
+try:
+    folders = json.load(sys.stdin)
+    title_to_find = sys.argv[1]
+    for folder in folders:
+        if folder.get("title") == title_to_find:
+            print(folder.get("id"))
+            sys.exit(0)
+except Exception:
+    sys.exit(1)
+sys.exit(1)
+'''
+                    // Write the Python parser to a file in the workspace.
+                    writeFile(file: 'folder_parser.py', text: pythonParser)
+
                     // Define the entire restore script as a Groovy multiline string.
                     def restoreScriptContent = '''
                         #!/bin/bash
@@ -64,7 +82,7 @@ pipeline {
 
                         echo "Starting Grafana restore from local directory '${GRAFANA_BACKUP_DIR}' to ${GRAFANA_URL}"
 
-                        # A more robust function to parse JSON values using awk.
+                        # A function to parse simple JSON values from strings.
                         extract_json_value() {
                             local json="$1"
                             local key="$2"
@@ -99,15 +117,10 @@ pipeline {
                             local search_result
                             search_result=$(curl -s -H "Authorization: Bearer ${GRAFANA_API_KEY}" "${GRAFANA_URL}/api/search?type=dash-folder")
                             
-                            # Process search results to find a matching folder
+                            # --- FIX: Use the Python script for reliable parsing ---
                             local folder_id
-                            folder_id=$(echo "$search_result" | sed 's/^\\[//;s/\\]$//' | sed 's/},{/}\\n{/g' | while read -r folder_info; do
-                                current_title=$(extract_json_value "$folder_info" "title")
-                                if [ "$current_title" == "$folder_title" ]; then
-                                    extract_json_value "$folder_info" "id"
-                                    break
-                                fi
-                            done)
+                            # Pipe the curl result into the python script. If it exits with an error (folder not found), '|| true' prevents 'set -e' from stopping the script.
+                            folder_id=$(python folder_parser.py "${folder_title}" <<< "${search_result}") || true
 
                             if [ -n "$folder_id" ]; then
                                 echo "Folder '${folder_title}' already exists with ID: ${folder_id}" >&2
@@ -131,34 +144,49 @@ pipeline {
                             echo "$folder_id"
                         }
 
-                        # Find all dashboard JSON files in the backup directory and iterate through them
+                        # PASS 1: Pre-create all necessary folders
+                        echo "--- Pass 1: Ensuring all Grafana folders exist ---"
+                        # Create a unique list of all folder names required by the backup.
+                        find "${GRAFANA_BACKUP_DIR}" -type f -name "*.json" | while read -r dashboard_path; do
+                            path_in_backup="${dashboard_path#${GRAFANA_BACKUP_DIR}/}"
+                            if [[ "$path_in_backup" == *"/"* ]]; then
+                                subfolder_name="${path_in_backup%%/*}"
+                                echo "playground_${subfolder_name}"
+                            else
+                                echo "playground"
+                            fi
+                        done | sort -u | while read -r folder_name; do
+                            echo "Checking/creating folder: ${folder_name}"
+                            get_or_create_folder_id "${folder_name}" > /dev/null
+                        done
+                        echo "--- Folder check complete ---"
+
+                        # PASS 2: Restore all dashboards
+                        echo "--- Pass 2: Restoring all dashboards ---"
                         find "${GRAFANA_BACKUP_DIR}" -type f -name "*.json" | while read -r dashboard_path; do
                             echo "--- Processing dashboard: ${dashboard_path} ---"
                             
-                            dir_path=$(dirname "${dashboard_path}")
-                            folder_title=$(basename "${dir_path}")
-                            
+                            # This logic more reliably determines the correct target folder.
                             TARGET_FOLDER_ID=""
-                            
-                            # If the dashboard is in the root of the backup dir, its parent is the "playground" folder.
-                            if [ "${folder_title}" == "${GRAFANA_BACKUP_DIR}" ]; then
-                                TARGET_FOLDER_ID=$(get_or_create_folder_id "playground")
+                            path_in_backup="${dashboard_path#${GRAFANA_BACKUP_DIR}/}"
+
+                            if [[ "$path_in_backup" == *"/"* ]]; then
+                                subfolder_name="${path_in_backup%%/*}"
+                                folder_name="playground_${subfolder_name}"
+                                TARGET_FOLDER_ID=$(get_or_create_folder_id "${folder_name}")
                             else
-                                # Otherwise, the parent is a sub-folder.
-                                TARGET_FOLDER_ID=$(get_or_create_folder_id "${folder_title}")
+                                TARGET_FOLDER_ID=$(get_or_create_folder_id "playground")
                             fi
                             
                             if [ -z "$TARGET_FOLDER_ID" ]; then
-                                echo "Could not determine Folder ID for '${folder_title}'. Skipping dashboard."
+                                echo "Could not determine Folder ID for '${dashboard_path}'. Skipping dashboard."
                                 continue
                             fi
                             
                             # Read the full JSON content from the backup file
                             full_backup_json=$(cat "${dashboard_path}")
 
-                            # The backup file contains {"meta":{...}, "dashboard":{...}}.
-                            # The restore API expects {"dashboard":{...}, "folderId":...}.
-                            # This command extracts the main dashboard object and removes its "id" field.
+                            # Extract the main dashboard object and remove its "id" field.
                             dashboard_object=$(echo "$full_backup_json" | sed 's/.*,"dashboard"://' | sed 's/}$//' | sed 's/"id":[0-9]*,//')
 
                             if [ -z "$dashboard_object" ]; then

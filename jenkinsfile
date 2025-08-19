@@ -1,0 +1,225 @@
+// Defines the start of a declarative Jenkins pipeline.
+pipeline {
+    // Specifies that the pipeline can run on any available Jenkins agent.
+    agent any
+
+    // Sets up an automatic schedule for the pipeline to run.
+    triggers {
+        // 'H * * * *' means the job will run approximately every hour.
+        cron('H * * * *')
+    }
+
+       // Defines environment variables that will be available throughout the pipeline.
+    environment {
+   // Securely loads the Grafana API key from Jenkins credentials.
+             GRAFANA_API_KEY = credentials('GRAFANA_API_KEY')
+        // The URL of your Grafana instance.
+        GRAFANA_URL = "https://jstest2025.grafana.net"
+        // The name of the root directory where backups will be stored in the Git repository.
+        GRAFANA_BACKUP_DIR = "playground_nonprd"
+    }
+
+    // Contains all the main work stages of the pipeline.
+    stages {
+        // The first stage: responsible for checking out code from your Git repository.
+        stage('Checkout Git Repository') {
+            steps {
+                // The 'checkout' step clones or updates the specified Git repository and branch.
+                // Uses 'scm' to automatically checkout the branch that triggered this build
+                checkout scm
+            }
+        }
+
+        // This stage runs on any branch - no branch restrictions
+        stage('Run Grafana Dashboard Backup') {
+            steps {
+                // Wrap the script execution in a 'dir' block to ensure it runs from the repository root.
+                dir(env.WORKSPACE) {
+                    // A 'script' block allows for more complex Groovy code and logic.
+                    script {
+                        // A multiline string variable in Groovy that holds the entire bash script.
+                        def grafanaBackupScriptContent = '''#!/bin/bash
+                            # 'set -e' ensures the script will exit immediately if a command fails.
+                            set -e
+                            # 'set -x' prints each command to the log before it is executed, useful for debugging.
+                            set -x
+                            
+                            CURL_CMD="/usr/bin/curl"
+
+                            # Sanity checks to ensure required tools and variables are present.
+                            if [ ! -f "${CURL_CMD}" ]; then
+                                echo "Error: 'curl' not found at ${CURL_CMD}. Please install it."
+                                exit 1
+                            fi
+                            if [ -z "${GRAFANA_URL}" ] || [ -z "${GRAFANA_API_KEY}" ] || [ -z "${GRAFANA_BACKUP_DIR}" ]; then
+                                echo "Missing required environment variables."
+                                exit 1
+                            fi
+
+                            echo "Starting Grafana dashboard backup from ${GRAFANA_URL} to ${GRAFANA_BACKUP_DIR}"
+
+                            rm -rf "${GRAFANA_BACKUP_DIR}"
+                            mkdir -p "${GRAFANA_BACKUP_DIR}"
+
+                            sanitize_filename() {
+                                echo "$1" | sed 's/[^a-zA-Z0-9._-]/_/g' | sed 's/__*/_/g' | sed 's/^_//;s/_$//'
+                            }
+
+                            extract_json_value() {
+                                local json="$1"
+                                local key="$2"
+                                echo "$json" | awk -F'"' -v key="$key" '
+                                    {
+                                        for(i=1; i<=NF; i++) {
+                                            if($i == key && $(i+1) == ":") {
+                                                print $(i+2)
+                                                break
+                                            }
+                                        }
+                                    }'
+                            }
+
+                            extract_json_value_with_default() {
+                                local json="$1"
+                                local key="$2"
+                                local default="$3"
+                                local value=$(extract_json_value "$json" "$key")
+                                if [ -z "$value" ] || [ "$value" = "null" ]; then
+                                    echo "$default"
+                                else
+                                    echo "$value"
+                                fi
+                            }
+
+                            # This map translates Grafana folder names to Git directory paths.
+                            # ONLY folders listed here will be backed up.
+                            declare -A GRAFANA_FOLDER_MAP
+                            
+                            GRAFANA_FOLDER_MAP["Playground"]=""
+                            GRAFANA_FOLDER_MAP["_Anaplan Operations_"]="Playground/Anaplan_Operations"
+                            GRAFANA_FOLDER_MAP["CVD Mirror"]="Playground/CVD_Mirror"
+                            GRAFANA_FOLDER_MAP["Data and AI"]="Playground/Data_and_AI"
+                            GRAFANA_FOLDER_MAP["Envoy Proxy"]="Playground/Envoy_Proxy"
+                            GRAFANA_FOLDER_MAP["Experience Engineering"]="Playground/Experience_Engineering"
+                            GRAFANA_FOLDER_MAP["apisvc-api-services"]="Playground/Experience_Engineering/apisvc-api-services"
+                            GRAFANA_FOLDER_MAP["Cai"]="Playground/Experience_Engineering/Cai"
+                            GRAFANA_FOLDER_MAP["core-performance"]="Playground/Experience_Engineering/core-performance"
+                            GRAFANA_FOLDER_MAP["Jim-Jam"]="Playground/Experience_Engineering/Jim-Jam"
+                            GRAFANA_FOLDER_MAP["Penguin"]="Playground/Experience_Engineering/Penguin"
+                            GRAFANA_FOLDER_MAP["IT and Portfolio Management- SS"]="Playground/IT_and_Portfolio_Management-SS"
+                            GRAFANA_FOLDER_MAP["J5SV2-Dashboard"]="Playground/J5SV2-Dashboard"
+                            GRAFANA_FOLDER_MAP["O11y"]="Playground/O11y"
+                            GRAFANA_FOLDER_MAP["Platform Infrastructure"]="Playground/Platform_Infrastructure"
+                            GRAFANA_FOLDER_MAP["Platform Services"]="Playground/Platform_Services"
+                            GRAFANA_FOLDER_MAP["LDE"]="playground/Platform_Services/LDE"
+                            GRAFANA_FOLDER_MAP["Reaper"]="Playground/Reaper"
+                            GRAFANA_FOLDER_MAP["Traefik Proxy"]="Playground/Traefik_Proxy"
+                            
+                            
+                            # Stream the output of curl directly into the processing pipeline
+                            # to avoid storing the entire large JSON response in a shell variable.
+                            ${CURL_CMD} -s -H "Authorization: Bearer ${GRAFANA_API_KEY}" "${GRAFANA_URL}/api/search?type=dash-db&query=" | sed 's/^\\[//;s/\\]$//' | sed 's/},{/}\\n{/g' | while IFS= read -r dashboard_info; do
+                                
+                                DASHBOARD_UID=$(extract_json_value "$dashboard_info" "uid")
+                                DASHBOARD_TITLE=$(extract_json_value "$dashboard_info" "title")
+                                CLEAN_FOLDER_TITLE=$(extract_json_value_with_default "$dashboard_info" "folderTitle" "General")
+                                
+                                if [ -z "$DASHBOARD_UID" ] || [ -z "$DASHBOARD_TITLE" ]; then
+                                    continue
+                                fi
+                            
+                                CLEAN_FOLDER_TITLE=$(echo "$CLEAN_FOLDER_TITLE" | tr -d '\\n\\r\\t')
+                                
+                                CLEAN_FOLDER_TITLE=$(echo "$CLEAN_FOLDER_TITLE" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+
+                                echo "DEBUG: Checking for folder title key: '[${CLEAN_FOLDER_TITLE}]'"
+
+                                if [[ -v GRAFANA_FOLDER_MAP["${CLEAN_FOLDER_TITLE}"] ]]; then
+                                    TARGET_GIT_RELATIVE_PATH="${GRAFANA_FOLDER_MAP["${CLEAN_FOLDER_TITLE}"]}"
+
+                                    SANITIZED_DASH_TITLE=$(sanitize_filename "${DASHBOARD_TITLE}")
+                                    CURRENT_SAVE_DIR="${GRAFANA_BACKUP_DIR}"
+                                    if [ -n "${TARGET_GIT_RELATIVE_PATH}" ]; then
+                                        CURRENT_SAVE_DIR="${GRAFANA_BACKUP_DIR}/${TARGET_GIT_RELATIVE_PATH}"
+                                    fi
+                                    
+                                    mkdir -p "${CURRENT_SAVE_DIR}"
+
+                                    filename="${SANITIZED_DASH_TITLE}.json"
+                                    filepath="${CURRENT_SAVE_DIR}/${filename}"
+
+                                    # Stream the dashboard JSON directly to the file to conserve memory.
+                                    if ${CURL_CMD} -s --fail -H "Authorization: Bearer ${GRAFANA_API_KEY}" "${GRAFANA_URL}/api/dashboards/uid/${DASHBOARD_UID}" > "${filepath}"; then
+                                        if grep -q '"dashboard"' "${filepath}"; then
+                                            echo "Backed up: ${DASHBOARD_TITLE} -> ${filepath}"
+                                        else
+                                            echo "Failed to backup dashboard (invalid content): ${DASHBOARD_TITLE}"
+                                            rm "${filepath}"
+                                        fi
+                                    else
+                                        echo "Failed to download dashboard (HTTP error): ${DASHBOARD_TITLE}"
+                                    fi
+                                fi
+                            done
+
+                            echo "Backup complete."
+                        '''
+
+                        writeFile(file: 'run_grafana_backup.sh', text: grafanaBackupScriptContent)
+                        sh 'chmod +x run_grafana_backup.sh'
+                        sh 'bash ./run_grafana_backup.sh'
+                    }
+                }
+            }
+        }
+
+        // This stage runs on any branch - commits back to the same branch
+        stage('Commit and Push Changes to Git') {
+            steps {
+                // Wrap all git commands in a 'dir' block to run them from the repository root.
+                dir(env.WORKSPACE) {
+                    script {
+                        sh "git config user.email 'jenkins@test.com'"
+                        sh "git config user.name 'Jenkins Automated Backup'"
+                        
+                        // Use the usernamePassword helper to match your credential type
+                        withCredentials([usernamePassword(credentialsId: 'github-creds2', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PAT')]) {
+                            sh """
+                                # Configure Git to use a credential store file
+                                git config credential.helper store
+                                # Write the PAT (from the password field) to the store file in the correct format
+                                echo "https://x-access-token:${GIT_PAT}@github.com" > ~/.git-credentials
+
+                                # Add the new backup files to the staging area
+                                git add --all ${env.GRAFANA_BACKUP_DIR}
+
+                                # Check if there are any staged changes to commit
+                                if ! git diff-index --quiet --cached HEAD; then
+                                    # Commit the changes with a timestamp. The dollar sign for the date command is escaped.
+                                    git commit -m "Grafana Dashboards Backup - \$(date +%Y-%m-%d_%H-%M-%S)"
+
+                                    # Pull the latest changes from the remote branch before pushing
+                                    git pull origin ${env.BRANCH_NAME} --rebase
+
+                                    # Push the current commit (HEAD) to the branch it was checked out from
+                                    git push origin HEAD:${env.BRANCH_NAME}
+                                else
+                                    echo "No new changes to commit."
+                                fi
+                            """
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // The 'post' section defines actions that run at the end of the pipeline.
+    post {
+        // 'always' means this action will run regardless of whether the pipeline succeeded or failed.
+        always {
+            // Clean up workspace manually
+            deleteDir()
+        }
+    }
+}

@@ -98,27 +98,12 @@ pipeline {
                         find "${GRAFANA_BACKUP_DIR}" -type f -name "*.json" | while read -r dashboard_path; do
                             echo "--- Processing dashboard: ${dashboard_path} ---"
                             
-                            path_in_backup="${dashboard_path#${GRAFANA_BACKUP_DIR}/}"
-                            
-                            # This logic correctly handles nested subdirectories and the special 'playground' folder.
-                            relative_dir=$(dirname "${path_in_backup}")
-                            
-                            folder_name=""
-                            if [[ "${relative_dir}" == "." ]]; then
-                                # Dashboard is at the root of the backup directory.
-                                folder_name="playground"
-                            elif [[ "${relative_dir}" == "playground" ]]; then
-                                # Dashboard is in the 'playground' subdirectory.
-                                folder_name="playground"
-                            else
-                                # Dashboard is in a different or nested subdirectory.
-                                # Strip a leading "playground/" from the path, if it exists.
-                                path_to_process=${relative_dir#playground/}
-                                # Replace any remaining slashes with underscores.
-                                sanitized_path=${path_to_process//\\//_}
-                                # Prepend "playground_" to the final name.
-                                folder_name="playground_${sanitized_path}"
-                            fi
+                            # --- FIX STARTS HERE ---
+                            # To resolve folder issues, this logic has been simplified.
+                            # ALL dashboards will be restored to a single Grafana folder named "playground".
+                            # The subdirectory structure from the git repository will be ignored.
+                            folder_name="playground"
+                            # --- FIX ENDS HERE ---
 
                             # Check if the folder is already in our map. If not, create it.
                             if [ -z "${FOLDER_IDS[$folder_name]}" ]; then

@@ -104,16 +104,16 @@ pipeline {
                             relative_dir=$(dirname "${path_in_backup}")
                             
                             folder_name=""
-                            # This logic correctly handles the repository structure to generate the target folder name.
-                            if [[ "${relative_dir}" == "." ]] || [[ "${relative_dir}" == "playground" ]]; then
-                                # Dashboards at the root or in a 'playground' subdir go to the main 'playground' folder.
+                            if [[ "${relative_dir}" == "." ]]; then
+                                # Dashboard is at the root of the backup directory.
                                 folder_name="playground"
                             else
-                                # For all other subdirectories, create a prefixed folder name.
-                                # First, strip a leading 'playground/' if it exists, to avoid duplication.
+                                # Dashboard is in a subdirectory.
+                                # Strip a leading "playground/" from the path, if it exists, to handle nested structures correctly.
                                 path_to_process=${relative_dir#playground/}
-                                # Then, replace any remaining slashes with underscores for nested directories.
+                                # Replace any remaining slashes with underscores.
                                 sanitized_path=${path_to_process//\\//_}
+                                # Prepend "playground_" to the final name.
                                 folder_name="playground_${sanitized_path}"
                             fi
 

@@ -139,20 +139,10 @@ pipeline {
                             echo "--- Processing dashboard: ${dashboard_path} ---"
                             
                             # --- FIX STARTS HERE ---
-                            # This logic more reliably determines the correct target folder.
-                            TARGET_FOLDER_ID=""
-                            # Get the dashboard's path relative to the backup directory root.
-                            path_in_backup="${dashboard_path#${GRAFANA_BACKUP_DIR}/}"
-
-                            # Check if the path contains a slash, which indicates it's in a subdirectory.
-                            if [[ "$path_in_backup" == *"/"* ]]; then
-                                # It's in a subdirectory. The folder name is the part before the first slash.
-                                folder_name="${path_in_backup%%/*}"
-                                TARGET_FOLDER_ID=$(get_or_create_folder_id "${folder_name}")
-                            else
-                                # It's at the root of the backup directory. It goes to the "playground" folder.
-                                TARGET_FOLDER_ID=$(get_or_create_folder_id "playground")
-                            fi
+                            # To isolate the problem, we will temporarily force all dashboards
+                            # into a single folder named "playground". This removes all complex
+                            # path logic to see if the folder creation function itself is the issue.
+                            TARGET_FOLDER_ID=$(get_or_create_folder_id "playground")
                             # --- FIX ENDS HERE ---
                             
                             if [ -z "$TARGET_FOLDER_ID" ]; then
@@ -166,7 +156,6 @@ pipeline {
                             # The backup file contains {"meta":{...}, "dashboard":{...}}.
                             # The restore API expects {"dashboard":{...}, "folderId":...}.
                             # This command extracts the main dashboard object and removes its "id" field.
-                            # Using jq would be more robust, but sed works for this known format.
                             dashboard_object=$(echo "$full_backup_json" | sed 's/.*,"dashboard"://' | sed 's/}$//' | sed 's/"id":[0-9]*,//')
 
                             if [ -z "$dashboard_object" ]; then

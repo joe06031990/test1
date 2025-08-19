@@ -100,17 +100,27 @@ pipeline {
                             
                             path_in_backup="${dashboard_path#${GRAFANA_BACKUP_DIR}/}"
                             
+                            # --- FIX STARTS HERE ---
+                            # This logic correctly handles nested subdirectories and the special 'playground' folder.
+                            relative_dir=$(dirname "${path_in_backup}")
+                            
                             folder_name=""
-                            if [[ "$path_in_backup" == *"/"* ]]; then
-                                subfolder_name="${path_in_backup%%/*}"
-                                if [[ "${subfolder_name}" == "playground" ]]; then
-                                    folder_name="playground"
-                                else
-                                    folder_name="playground_${subfolder_name}"
-                                fi
-                            else
+                            if [[ "${relative_dir}" == "." ]]; then
+                                # Dashboard is at the root of the backup directory.
                                 folder_name="playground"
+                            elif [[ "${relative_dir}" == "playground" ]]; then
+                                # Dashboard is in the 'playground' subdirectory.
+                                folder_name="playground"
+                            else
+                                # Dashboard is in a different or nested subdirectory.
+                                # Strip a leading "playground/" from the path, if it exists.
+                                path_to_process=${relative_dir#playground/}
+                                # Replace any remaining slashes with underscores.
+                                sanitized_path=${path_to_process//\//_}
+                                # Prepend "playground_" to the final name.
+                                folder_name="playground_${sanitized_path}"
                             fi
+                            # --- FIX ENDS HERE ---
 
                             # Check if the folder is already in our map. If not, create it.
                             if [ -z "${FOLDER_IDS[$folder_name]}" ]; then

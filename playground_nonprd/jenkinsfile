@@ -158,8 +158,8 @@ pipeline {
 
                             # The backup file contains {"meta":{...}, "dashboard":{...}}.
                             # The restore API expects {"dashboard":{...}, "folderId":...}.
-                            # This sed command correctly extracts the main dashboard object.
-                            dashboard_object=$(echo "$full_backup_json" | sed 's/.*,"dashboard"://' | sed 's/}$//')
+                            # This command correctly extracts the main dashboard object.
+                            dashboard_object=$(echo "$full_backup_json" | sed 's/^{"meta":.*,"dashboard"://' | sed 's/}$//')
 
                             if [ -z "$dashboard_object" ]; then
                                 echo "Error: Could not extract dashboard object from '${dashboard_path}'. Skipping."

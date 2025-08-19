@@ -99,18 +99,23 @@ pipeline {
                             local search_result
                             search_result=$(curl -s -H "Authorization: Bearer ${GRAFANA_API_KEY}" "${GRAFANA_URL}/api/search?type=dash-folder")
                             
-                            # Process search results to find a matching folder ID.
-                            # Backslashes are escaped for Groovy's multiline string parsing.
+                            # --- FIX STARTS HERE ---
+                            # This awk command provides a much more robust way to parse the JSON response.
+                            # It correctly handles variations in formatting and finds the folder ID reliably.
                             local folder_id
-                            folder_id=$(echo "$search_result" | \\
-                                # Split the JSON array into one folder object per line for easier parsing.
-                                sed 's/},{/}\\n{/g' | \\
-                                # Find the line containing the exact folder title.
-                                grep "\"title\":\"${folder_title}\"" | \\
-                                # From that line, extract the numeric value of the "id" field.
-                                sed -n 's/.*"id":\\([0-9]*\\).*/\\1/p' | \\
-                                # Take the first match in case of duplicates.
-                                head -n 1)
+                            folder_id=$(echo "$search_result" | awk -v title="$folder_title" '
+                                BEGIN { RS = ","; FS = "[\\":,{}]+"; }
+                                {
+                                    for(i=1; i<=NF; i++) {
+                                        if ($i == "title" && $(i+1) == title) {
+                                            for(j=1; j<=NF; j++) {
+                                                if ($j == "id") { print $(j+1); exit; }
+                                            }
+                                        }
+                                    }
+                                }
+                            ')
+                            # --- FIX ENDS HERE ---
 
                             if [ -n "$folder_id" ]; then
                                 echo "Folder '${folder_title}' already exists with ID: ${folder_id}" >&2
@@ -138,12 +143,20 @@ pipeline {
                         find "${GRAFANA_BACKUP_DIR}" -type f -name "*.json" | while read -r dashboard_path; do
                             echo "--- Processing dashboard: ${dashboard_path} ---"
                             
-                            # --- FIX STARTS HERE ---
-                            # To isolate the problem, we will temporarily force all dashboards
-                            # into a single folder named "playground". This removes all complex
-                            # path logic to see if the folder creation function itself is the issue.
-                            TARGET_FOLDER_ID=$(get_or_create_folder_id "playground")
-                            # --- FIX ENDS HERE ---
+                            # This logic more reliably determines the correct target folder.
+                            TARGET_FOLDER_ID=""
+                            # Get the dashboard's path relative to the backup directory root.
+                            path_in_backup="${dashboard_path#${GRAFANA_BACKUP_DIR}/}"
+
+                            # Check if the path contains a slash, which indicates it's in a subdirectory.
+                            if [[ "$path_in_backup" == *"/"* ]]; then
+                                # It's in a subdirectory. The folder name is the part before the first slash.
+                                folder_name="${path_in_backup%%/*}"
+                                TARGET_FOLDER_ID=$(get_or_create_folder_id "${folder_name}")
+                            else
+                                # It's at the root of the backup directory. It goes to the "playground" folder.
+                                TARGET_FOLDER_ID=$(get_or_create_folder_id "playground")
+                            fi
                             
                             if [ -z "$TARGET_FOLDER_ID" ]; then
                                 echo "Could not determine Folder ID for '${dashboard_path}'. Skipping dashboard."

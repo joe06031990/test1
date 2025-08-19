@@ -99,15 +99,20 @@ pipeline {
                             local search_result
                             search_result=$(curl -s -H "Authorization: Bearer ${GRAFANA_API_KEY}" "${GRAFANA_URL}/api/search?type=dash-folder")
                             
-                            # Process search results to find a matching folder
+                            # --- FIX STARTS HERE ---
+                            # Process search results to find a matching folder ID.
+                            # This approach is more robust than the previous while-loop parser.
                             local folder_id
-                            folder_id=$(echo "$search_result" | sed 's/^\\[//;s/\\]$//' | sed 's/},{/}\\n{/g' | while read -r folder_info; do
-                                current_title=$(extract_json_value "$folder_info" "title")
-                                if [ "$current_title" == "$folder_title" ]; then
-                                    extract_json_value "$folder_info" "id"
-                                    break
-                                fi
-                            done)
+                            folder_id=$(echo "$search_result" | \
+                                # Split the JSON array into one folder object per line for easier parsing.
+                                sed 's/},{/}\\n{/g' | \
+                                # Find the line containing the exact folder title.
+                                grep "\"title\":\"${folder_title}\"" | \
+                                # From that line, extract the numeric value of the "id" field.
+                                sed -n 's/.*"id":\([0-9]*\).*/\1/p' | \
+                                # Take the first match in case of duplicates.
+                                head -n 1)
+                            # --- FIX ENDS HERE ---
 
                             if [ -n "$folder_id" ]; then
                                 echo "Folder '${folder_title}' already exists with ID: ${folder_id}" >&2
@@ -159,6 +164,7 @@ pipeline {
                             # The backup file contains {"meta":{...}, "dashboard":{...}}.
                             # The restore API expects {"dashboard":{...}, "folderId":...}.
                             # This command extracts the main dashboard object and removes its "id" field.
+                            # Using jq would be more robust, but sed works for this known format.
                             dashboard_object=$(echo "$full_backup_json" | sed 's/.*,"dashboard"://' | sed 's/}$//' | sed 's/"id":[0-9]*,//')
 
                             if [ -z "$dashboard_object" ]; then

@@ -139,19 +139,17 @@ pipeline {
                             echo "--- Processing dashboard: ${dashboard_path} ---"
                             
                             # --- FIX STARTS HERE ---
-                            # Get the directory of the dashboard, relative to the backup root, to determine the target folder.
-                            relative_dir=$(dirname "${dashboard_path#${GRAFANA_BACKUP_DIR}/}")
+                            # Determine the parent directory of the dashboard file.
+                            parent_dir=$(basename "$(dirname "${dashboard_path}")")
                             
                             TARGET_FOLDER_ID=""
                             
-                            if [ "${relative_dir}" == "." ]; then
+                            if [ "${parent_dir}" == "${GRAFANA_BACKUP_DIR}" ]; then
                                 # File is at the root of the backup dir, so it goes in the main "playground" folder.
                                 TARGET_FOLDER_ID=$(get_or_create_folder_id "playground")
                             else
-                                # File is in a subdirectory. Use the top-level subdirectory name as the folder title.
-                                # Grafana folders are flat, so we don't create a nested structure.
-                                top_level_dir=$(echo "${relative_dir}" | cut -d/ -f1)
-                                TARGET_FOLDER_ID=$(get_or_create_folder_id "${top_level_dir}")
+                                # File is in a subdirectory. Use the subdirectory name as the folder title.
+                                TARGET_FOLDER_ID=$(get_or_create_folder_id "${parent_dir}")
                             fi
                             # --- FIX ENDS HERE ---
                             

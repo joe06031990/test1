@@ -79,15 +79,15 @@ pipeline {
                                 }'
                         }
 
-                        # Use an associative array to keep track of created folder UIDs to avoid duplicate API calls
-                        declare -A FOLDER_UIDS
+                        # Use an associative array to keep track of folder IDs to avoid duplicate API calls
+                        declare -A FOLDER_IDS
 
-                        # Function to get or create a Grafana folder and store its UID
-                        get_or_create_folder() {
+                        # Function to get or create a Grafana folder and return its ID
+                        get_or_create_folder_id() {
                             local folder_title=$1
                             
-                            if [ -n "${FOLDER_UIDS[$folder_title]}" ]; then
-                                echo "${FOLDER_UIDS[$folder_title]}"
+                            if [ -n "${FOLDER_IDS[$folder_title]}" ]; then
+                                echo "${FOLDER_IDS[$folder_title]}"
                                 return
                             fi
 
@@ -96,17 +96,17 @@ pipeline {
                             search_result=$(curl -s -H "Authorization: Bearer ${GRAFANA_API_KEY}" "${GRAFANA_URL}/api/search?type=dash-folder")
                             
                             # Process search results to find a matching folder
-                            local folder_uid
-                            folder_uid=$(echo "$search_result" | sed 's/^\\[//;s/\\]$//' | sed 's/},{/}\\n{/g' | while read -r folder_info; do
+                            local folder_id
+                            folder_id=$(echo "$search_result" | sed 's/^\\[//;s/\\]$//' | sed 's/},{/}\\n{/g' | while read -r folder_info; do
                                 current_title=$(extract_json_value "$folder_info" "title")
                                 if [ "$current_title" == "$folder_title" ]; then
-                                    extract_json_value "$folder_info" "uid"
+                                    extract_json_value "$folder_info" "id"
                                     break
                                 fi
                             done)
 
-                            if [ -n "$folder_uid" ]; then
-                                echo "Folder '${folder_title}' already exists with UID: ${folder_uid}" >&2
+                            if [ -n "$folder_id" ]; then
+                                echo "Folder '${folder_title}' already exists with ID: ${folder_id}" >&2
                             else
                                 echo "Folder '${folder_title}' not found. Creating it..." >&2
                                 local create_payload="{\\"title\\": \\"${folder_title}\\"}"
@@ -114,25 +114,18 @@ pipeline {
                                 local create_result
                                 create_result=$(curl -s -X POST -H "Authorization: Bearer ${GRAFANA_API_KEY}" -H "Content-Type: application/json" --data "$create_payload" "${GRAFANA_URL}/api/folders")
                                 
-                                folder_uid=$(extract_json_value "$create_result" "uid")
+                                folder_id=$(extract_json_value "$create_result" "id")
                                 
-                                if [ -z "$folder_uid" ]; then
+                                if [ -z "$folder_id" ]; then
                                     echo "Error: Failed to create folder '${folder_title}'. Response: ${create_result}" >&2
                                     exit 1
                                 fi
-                                echo "Successfully created folder '${folder_title}' with UID: ${folder_uid}" >&2
+                                echo "Successfully created folder '${folder_title}' with ID: ${folder_id}" >&2
                             fi
                             
-                            FOLDER_UIDS["$folder_title"]=$folder_uid
-                            echo "$folder_uid"
+                            FOLDER_IDS["$folder_title"]=$folder_id
+                            echo "$folder_id"
                         }
-
-                        # Ensure the main "Playground" folder exists first.
-                        PLAYGROUND_FOLDER_UID=$(get_or_create_folder "Playground")
-                        if [ -z "$PLAYGROUND_FOLDER_UID" ]; then
-                            echo "Fatal: Could not find or create the main 'Playground' folder." >&2
-                            exit 1
-                        fi
 
                         # Find all dashboard JSON files in the backup directory and iterate through them
                         find "${GRAFANA_BACKUP_DIR}" -type f -name "*.json" | while read -r dashboard_path; do
@@ -141,29 +134,24 @@ pipeline {
                             dir_path=$(dirname "${dashboard_path}")
                             folder_title=$(basename "${dir_path}")
                             
-                            FOLDER_ID=""
+                            TARGET_FOLDER_ID=""
                             
-                            # If the dashboard is in the root of the backup dir, its parent is the Playground folder.
+                            # If the dashboard is in the root of the backup dir, its parent is the "playground" folder.
                             if [ "${folder_title}" == "${GRAFANA_BACKUP_DIR}" ]; then
-                                folder_details=$(curl -s -H "Authorization: Bearer ${GRAFANA_API_KEY}" "${GRAFANA_URL}/api/folders/${PLAYGROUND_FOLDER_UID}")
-                                FOLDER_ID=$(extract_json_value "$folder_details" "id")
+                                TARGET_FOLDER_ID=$(get_or_create_folder_id "playground")
                             else
-                                # Otherwise, the parent is a sub-folder which we must create inside Playground.
-                                # The API does not support nested folder creation directly, so we just create them at the root.
-                                # Grafana's UI will show them as nested if the backup structure was flat.
-                                sub_folder_uid=$(get_or_create_folder "${folder_title}")
-                                folder_details=$(curl -s -H "Authorization: Bearer ${GRAFANA_API_KEY}" "${GRAFANA_URL}/api/folders/${sub_folder_uid}")
-                                FOLDER_ID=$(extract_json_value "$folder_details" "id")
+                                # Otherwise, the parent is a sub-folder.
+                                TARGET_FOLDER_ID=$(get_or_create_folder_id "${folder_title}")
                             fi
                             
-                            if [ -z "$FOLDER_ID" ]; then
+                            if [ -z "$TARGET_FOLDER_ID" ]; then
                                 echo "Could not determine Folder ID for '${folder_title}'. Skipping dashboard."
                                 continue
                             fi
                             
                             dashboard_json=$(cat "${dashboard_path}")
 
-                            restore_payload=$(printf '{"dashboard": %s, "folderId": %s, "overwrite": true}' "$dashboard_json" "$FOLDER_ID")
+                            restore_payload=$(printf '{"dashboard": %s, "folderId": %s, "overwrite": true}' "$dashboard_json" "$TARGET_FOLDER_ID")
 
                             restore_result=$(curl -s -X POST -H "Authorization: Bearer ${GRAFANA_API_KEY}" -H "Content-Type: application/json" --data-raw "${restore_payload}" "${GRAFANA_URL}/api/dashboards/db")
 

@@ -98,11 +98,25 @@ pipeline {
                         find "${GRAFANA_BACKUP_DIR}" -type f -name "*.json" | while read -r dashboard_path; do
                             echo "--- Processing dashboard: ${dashboard_path} ---"
                             
+                            path_in_backup="${dashboard_path#${GRAFANA_BACKUP_DIR}/}"
+                            
+                            # This logic correctly handles nested subdirectories and the special 'playground' folder.
+                            relative_dir=$(dirname "${path_in_backup}")
+                            
+                            folder_name=""
                             # --- FIX STARTS HERE ---
-                            # To resolve folder issues, this logic has been simplified.
-                            # ALL dashboards will be restored to a single Grafana folder named "playground".
-                            # The subdirectory structure from the git repository will be ignored.
-                            folder_name="playground"
+                            # This logic correctly handles the repository structure to generate the target folder name.
+                            if [[ "${relative_dir}" == "." ]] || [[ "${relative_dir}" == "playground" ]]; then
+                                # Dashboards at the root or in a 'playground' subdir go to the main 'playground' folder.
+                                folder_name="playground"
+                            else
+                                # For all other subdirectories, create a prefixed folder name.
+                                # First, strip a leading 'playground/' if it exists, to avoid duplication.
+                                path_to_process=${relative_dir#playground/}
+                                # Then, replace any remaining slashes with underscores for nested directories.
+                                sanitized_path=${path_to_process//\//_}
+                                folder_name="playground_${sanitized_path}"
+                            fi
                             # --- FIX ENDS HERE ---
 
                             # Check if the folder is already in our map. If not, create it.

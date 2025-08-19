@@ -159,7 +159,8 @@ pipeline {
                             # The backup file contains {"dashboard":{...}, "meta":{...}}.
                             # The restore API expects {"dashboard":{...}, "folderId":...}.
                             # We need to extract just the dashboard object.
-                            dashboard_object=$(echo "$full_backup_json" | sed -n 's/^{"dashboard":\(.*\),"meta":.*}/\1/p')
+                            # The backslashes for the sed capturing group must be escaped for Groovy.
+                            dashboard_object=$(echo "$full_backup_json" | sed -n 's/^{"dashboard":\\(.*\\),"meta":.*}/\\1/p')
 
                             if [ -z "$dashboard_object" ]; then
                                 echo "Error: Could not extract dashboard object from '${dashboard_path}'. Skipping."

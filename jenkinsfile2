@@ -114,7 +114,7 @@ pipeline {
                                 # First, strip a leading 'playground/' if it exists, to avoid creating 'playground_playground_...'.
                                 path_to_process=${relative_dir#playground/}
                                 # Then, replace any remaining slashes with underscores for nested directories.
-                                sanitized_path=${path_to_process//\\//_}
+                                sanitized_path=${path_to_process//\//_}
                                 folder_name="playground_${sanitized_path}"
                             fi
                             # --- FIX ENDS HERE ---

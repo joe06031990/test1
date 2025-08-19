@@ -45,20 +45,20 @@ pipeline {
 
                         # Sanity checks to ensure required tools and variables are present.
                         if [ -z "${GRAFANA_URL}" ] || [ -z "${GRAFANA_API_KEY}" ] || [ -z "${GRAFANA_BACKUP_DIR}" ]; then
-                            echo "Missing required environment variables (GRAFANA_URL, GRAFANA_API_KEY, GRAFANA_BACKUP_DIR)."
+                            echo "Missing required environment variables (GRAFANA_URL, GRAFANA_API_KEY, GRAFANA_BACKUP_DIR)." >&2
                             exit 1
                         fi
 
                         if [ ! -d "${GRAFANA_BACKUP_DIR}" ]; then
-                            echo "Error: Backup directory '${GRAFANA_BACKUP_DIR}' not found."
+                            echo "Error: Backup directory '${GRAFANA_BACKUP_DIR}' not found." >&2
                             exit 1
                         fi
                         
                         # --- Safety Check ---
                         # This script is specifically designed to restore the 'playground_nonprd' backup.
                         if [ "$(basename "${GRAFANA_BACKUP_DIR}")" != "playground_nonprd" ]; then
-                            echo "Error: This script is configured to only restore the 'playground_nonprd' directory."
-                            echo "The target directory is '$(basename "${GRAFANA_BACKUP_DIR}")'. Aborting."
+                            echo "Error: This script is configured to only restore the 'playground_nonprd' directory." >&2
+                            echo "The target directory is '$(basename "${GRAFANA_BACKUP_DIR}")'. Aborting." >&2
                             exit 1
                         fi
 
@@ -106,9 +106,9 @@ pipeline {
                             done)
 
                             if [ -n "$folder_uid" ]; then
-                                echo "Folder '${folder_title}' already exists with UID: ${folder_uid}"
+                                echo "Folder '${folder_title}' already exists with UID: ${folder_uid}" >&2
                             else
-                                echo "Folder '${folder_title}' not found. Creating it..."
+                                echo "Folder '${folder_title}' not found. Creating it..." >&2
                                 local create_payload="{\\"title\\": \\"${folder_title}\\"}"
                                 
                                 local create_result
@@ -117,10 +117,10 @@ pipeline {
                                 folder_uid=$(extract_json_value "$create_result" "uid")
                                 
                                 if [ -z "$folder_uid" ]; then
-                                    echo "Error: Failed to create folder '${folder_title}'. Response: ${create_result}"
+                                    echo "Error: Failed to create folder '${folder_title}'. Response: ${create_result}" >&2
                                     exit 1
                                 fi
-                                echo "Successfully created folder '${folder_title}' with UID: ${folder_uid}"
+                                echo "Successfully created folder '${folder_title}' with UID: ${folder_uid}" >&2
                             fi
                             
                             FOLDER_UIDS["$folder_title"]=$folder_uid

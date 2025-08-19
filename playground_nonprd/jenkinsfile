@@ -65,7 +65,6 @@ pipeline {
                         echo "Starting Grafana restore from local directory '${GRAFANA_BACKUP_DIR}' to ${GRAFANA_URL}"
 
                         # A more robust function to parse JSON values using awk.
-                        # It tokenizes the JSON and finds the value immediately following the specified key.
                         extract_json_value() {
                             local json="$1"
                             local key="$2"
@@ -154,9 +153,18 @@ pipeline {
                                 continue
                             fi
                             
-                            dashboard_json=$(cat "${dashboard_path}")
+                            # Read the full JSON content from the backup file
+                            full_backup_json=$(cat "${dashboard_path}")
 
-                            restore_payload=$(printf '{"dashboard": %s, "folderId": %s, "overwrite": true}' "$dashboard_json" "$TARGET_FOLDER_ID")
+                            # The backup file contains {"dashboard":{...}, "meta":{...}}.
+                            # The restore API expects {"dashboard":{...}, "folderId":...}.
+                            # We need to remove the "meta" part and add our new keys.
+                            
+                            # 1. Remove the meta block. This finds ',"meta"' and removes it and everything after.
+                            dashboard_part=$(echo "$full_backup_json" | sed 's/,"meta":.*//')
+                            
+                            # 2. Construct the final payload by adding the folderId and overwrite keys.
+                            restore_payload="${dashboard_part},\"folderId\":${TARGET_FOLDER_ID},\"overwrite\":true}"
 
                             restore_result=$(curl -s -X POST -H "Authorization: Bearer ${GRAFANA_API_KEY}" -H "Content-Type: application/json" --data-raw "${restore_payload}" "${GRAFANA_URL}/api/dashboards/db")
 

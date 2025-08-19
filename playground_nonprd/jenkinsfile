@@ -127,6 +127,13 @@ pipeline {
                             echo "$folder_uid"
                         }
 
+                        # Ensure the main "Playground" folder exists first.
+                        PLAYGROUND_FOLDER_UID=$(get_or_create_folder "Playground")
+                        if [ -z "$PLAYGROUND_FOLDER_UID" ]; then
+                            echo "Fatal: Could not find or create the main 'Playground' folder." >&2
+                            exit 1
+                        fi
+
                         # Find all dashboard JSON files in the backup directory and iterate through them
                         find "${GRAFANA_BACKUP_DIR}" -type f -name "*.json" | while read -r dashboard_path; do
                             echo "--- Processing dashboard: ${dashboard_path} ---"
@@ -135,21 +142,22 @@ pipeline {
                             folder_title=$(basename "${dir_path}")
                             
                             FOLDER_ID=""
-                            target_grafana_folder=""
-
+                            
+                            # If the dashboard is in the root of the backup dir, its parent is the Playground folder.
                             if [ "${folder_title}" == "${GRAFANA_BACKUP_DIR}" ]; then
-                                target_grafana_folder="Playground"
+                                folder_details=$(curl -s -H "Authorization: Bearer ${GRAFANA_API_KEY}" "${GRAFANA_URL}/api/folders/${PLAYGROUND_FOLDER_UID}")
+                                FOLDER_ID=$(extract_json_value "$folder_details" "id")
                             else
-                                target_grafana_folder="${folder_title}"
+                                # Otherwise, the parent is a sub-folder which we must create inside Playground.
+                                # The API does not support nested folder creation directly, so we just create them at the root.
+                                # Grafana's UI will show them as nested if the backup structure was flat.
+                                sub_folder_uid=$(get_or_create_folder "${folder_title}")
+                                folder_details=$(curl -s -H "Authorization: Bearer ${GRAFANA_API_KEY}" "${GRAFANA_URL}/api/folders/${sub_folder_uid}")
+                                FOLDER_ID=$(extract_json_value "$folder_details" "id")
                             fi
                             
-                            echo "Target Grafana folder is: '${target_grafana_folder}'"
-                            folder_uid=$(get_or_create_folder "${target_grafana_folder}")
-                            folder_details=$(curl -s -H "Authorization: Bearer ${GRAFANA_API_KEY}" "${GRAFANA_URL}/api/folders/${folder_uid}")
-                            FOLDER_ID=$(extract_json_value "$folder_details" "id")
-                            
                             if [ -z "$FOLDER_ID" ]; then
-                                echo "Could not determine Folder ID for '${target_grafana_folder}'. Skipping dashboard."
+                                echo "Could not determine Folder ID for '${folder_title}'. Skipping dashboard."
                                 continue
                             fi
                             
